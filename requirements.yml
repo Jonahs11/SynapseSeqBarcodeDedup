@@ -1,0 +1,19 @@
+name: synapse_seq_dedup
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  - python=3.10
+  - scipy=1.15.2
+  - numpy
+  - umicollapse
+  - pandas
+  - matplotlib
+  - networkx
+  - tqdm
+  - click
+  - scikit-learn
+  - yaml
+
