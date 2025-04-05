@@ -2,6 +2,7 @@ name: synapse_seq_dedup
 channels:
   - conda-forge
   - bioconda
+  - anaconda
   - defaults
 
 dependencies:
