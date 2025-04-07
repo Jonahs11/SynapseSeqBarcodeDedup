@@ -27,12 +27,13 @@ if use_slurm:
 
 # get current file path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# get one dir above
-base_ss_dir = os.path.dirname(current_dir)
-config_yaml_path = os.path.join(base_ss_dir, "config.yaml")
+config_dir = os.path.dirname(current_dir)
+
+
+config_yaml_path = os.path.join(config_dir, "config.yaml")
 config = yaml.safe_load(open(config_yaml_path, "r"))
 
-prepend_path = config["prepend_cmds_path"]
+prepend_path = config.get("prepend_cmds_path", "")
 
 # read in samplesheet
 sample_df = pd.read_csv(args.samplesheet, sep=',')
@@ -41,10 +42,9 @@ cmds_list = []
 exec_path = os.path.join(current_dir, "02_graph_dedup_bulk_pool.py")
 
 for inx, row in sample_df.iterrows():
-    out_dir_extract = row['out_dir_dedup_general']
-    out_dir_dedup = row['out_dir_dedup_general']
+    out_dir_extract = row['out_dir_general']
+    out_dir_dedup = row['out_dir_general']
     sample_id = row['sample_id']
-    # run_id = row['run_id']
 
     out_log_file = os.path.join(out_dir_dedup, sample_id, f"{sample_id}_dedup.log")    
 

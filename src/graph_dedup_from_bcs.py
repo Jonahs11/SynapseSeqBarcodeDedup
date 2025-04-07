@@ -19,11 +19,20 @@ import sys
 import synapse_seq_functions as ssf
 
 
-# Fill in the path to umicollapse
-# ex.) /opt/conda/share/umicollapse-1.0.0-1/umicollapse
-umicollapse_path="umicollapse"
+# load config
+current_dir = os.path.dirname(os.path.abspath(__file__))
+config_dir = os.path.dirname(current_dir)
 
-assert os.path.exists(umicollapse_path)
+config_yaml_path = os.path.join(config_dir, "config.yaml")
+config = yaml.safe_load(open(config_yaml_path, "r"))
+
+
+umicollapse_path = config.get("umicollapse_path", "umicollapse")
+
+#ensure umicollapse is executable
+assert os.access(umicollapse_path, os.X_OK), f"umicollapse_path {umicollapse_path} is not executable. Please check the path to umicollapse in config.yaml"
+
+
 
 def write_mock_fastq(group_name, umi_vts, size_umi, size_vt, mock_fastq_folder):
     current_fastq_path = os.path.join(mock_fastq_folder, f"{group_name}.fastq")

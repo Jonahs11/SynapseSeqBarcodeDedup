@@ -14,17 +14,15 @@ parser.add_argument('--output', type=str, help='output file')
 parser.add_argument('--use_slurm', action='store_true', help='use slurm')
 args = parser.parse_args()
 
-
-MEM = "200G"
-# partition = None
-partition="hpcx_macosko"
-
 # IF using slurm, will write sbatch files to out_path, need to store this in a directory
 use_slurm = args.use_slurm
 out_path = os.path.abspath(args.output)
 
 # if use_slurm ensure out_path is a directory
 if use_slurm:
+
+    MEM = "200G"
+    partition="hpcx_macosko"
     # assert out_path is not a file
     assert not os.path.isfile(out_path), f"out_path {out_path} is a file, should be a directory"
     # create directory if it does not exist
@@ -35,16 +33,16 @@ os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
 # get current file path
 current_dir = os.path.dirname(os.path.abspath(__file__))
+config_dir = os.path.dirname(current_dir)
 
-# get one dir above
-base_ss_dir = os.path.dirname(current_dir)
-config_yaml_path = os.path.join(base_ss_dir, "config.yaml")
+config_yaml_path = os.path.join(config_dir, "config.yaml")
 config = yaml.safe_load(open(config_yaml_path, "r"))
 
-bulk_parse_fastq_path = os.path.join(base_ss_dir, "02_bulk", "extract_barcodes_bulk.py")
+# bulk_parse_fastq_path = os.path.join(base_ss_dir, "02_bulk", "extract_barcodes_bulk.py")
+bulk_parse_fastq_path = os.path.join(current_dir, "extract_barcodes.py")
 assert os.path.exists(bulk_parse_fastq_path), f"bulk_parse_fastq_path {bulk_parse_fastq_path} does not exist"
 
-prepend_path = config["prepend_cmds_path"]
+prepend_path = config.get("prepend_cmds_path", "")
 
 # read in samplesheet
 samplesheet_path_full = os.path.abspath(args.samplesheet)
@@ -64,13 +62,15 @@ for inx, row in sample_df.iterrows():
     assert os.path.exists(r1_path), f"r1 file {r1_path} does not exist"
     assert os.path.exists(r2_path), f"r2 file {r2_path} does not exist"
 
-    out_dir_extract = row['out_dir_extract_general']
+    out_dir_extract = row['out_dir_general']
     sample_id = row['sample_id']
     out_dir = os.path.join(out_dir_extract, sample_id)
     os.makedirs(out_dir, exist_ok=True)
 
+    out_log_file = os.path.join(out_dir, f"{sample_id}_extract.log")    
+
     # create command
-    cmd = f"python -u {bulk_parse_fastq_path} {r1_path} {r2_path} --output-dir {out_dir}"
+    cmd = f"python -u {bulk_parse_fastq_path} {r1_path} {r2_path} --output-dir {out_dir} > {out_log_file} 2>&1"
     if len(prepend_path) > 0:
         cmd = f"{prepend_path} {cmd}"
     cmd_tup = (sample_id, cmd)

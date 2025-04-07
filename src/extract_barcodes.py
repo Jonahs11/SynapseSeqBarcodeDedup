@@ -21,16 +21,26 @@ print("Begining Barcode Extraction")
 
 log = logging.getLogger("barcode_matrix")
 
-# get current file path
+# load config
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# set config yaml path as one directory above current file path
 config_dir = os.path.dirname(current_dir)
-config_path = os.path.join(config_dir, "config.yaml")
-with open(config_path, "r") as stream:
-    config = yaml.safe_load(stream)
+
+config_yaml_path = os.path.join(config_dir, "config.yaml")
+config = yaml.safe_load(open(config_yaml_path, "r"))
+
 
 ug_exec_path = config["ugrep_path"]
 vt_start_index_r2 = config["vt_start_index_r2"]
+umi_start_pos_r1 = config["umi_start_pos_r1_1_index"]
+umi_end_pos_r1 = config["umi_end_pos_r1_1_index"]
+
+# assert umi start and end are integers
+assert isinstance(umi_start_pos_r1, int), "umi_start_pos_r1 should be an integer"
+assert isinstance(umi_end_pos_r1, int), "umi_end_pos_r1 should be an integer"
+# assert umi start and end are positive
+assert umi_start_pos_r1 > 0, "umi_start_pos_r1 should be positive"
+assert umi_end_pos_r1 > 0, "umi_end_pos_r1 should be positive"
+assert umi_start_pos_r1 < umi_end_pos_r1, "umi_start_pos_r1 should be less than umi_end_pos_r1"
 
 # WSBWSDWSHWSVWSBWSWSHWSVWSBWSDWSH
 DEGENERATE_BASE_DICT = {
@@ -219,35 +229,39 @@ def main(
     preform_processing = not only_summary
     print(preform_processing)
 
-    # if rd2_stripped exists, skip this step
-    if (not (output_dir / 'rd2_stripped.fastq').exists()) & preform_processing:
-        print("Saving only the sequence lines from read 1")
-        command = [f'zcat {fastq_r1} | awk \'NR%4==2\' > rd1_stripped.fastq']
-        result = subprocess.run(command, cwd=output_dir, shell=True, capture_output=True)
-    else:
-        print("R1 already strippined. Skipping")
-    
-    # Check number of lines total
-    cmd = "zcat rd1_stripped.fastq | wc -l"
-    n_lines_total = subprocess.run(cmd, cwd=output_dir, shell=True, capture_output=True)
-    
-    if (not (output_dir / 'merged.fastq.gz').exists()) & preform_processing:
-        print("Saving only the sequence lines from read 2")
-        command = [f'zcat {fastq_r2} | awk \'NR%4==2\' > rd2_stripped.fastq']
-        result = subprocess.run(command, cwd=output_dir, shell=True, capture_output=True)
-    else:
-        print("R2 already strippined. Skipping")
-    if (not (output_dir / 'merged_preFilt_postFilt.fastq.gz').exists()) & preform_processing:
-        print("Merging Read 1 and Read 2 files")
-        command = [f'paste rd1_stripped.fastq rd2_stripped.fastq | gzip > merged.fastq.gz']
-        result = subprocess.run(command, cwd=output_dir, shell=True, capture_output=True)
-    else:
-        print("R1 and R2 Merged already strippined. Skipping")
+    with_gzip = False
+    merged_fname = "merged.fastq.gz"
+    if not with_gzip:
+        merged_fname = "merged.fastq"
 
-    if (not (output_dir / 'ident_preFilt_postFilt.fastq.gz').exists()) &  preform_processing:
+    if (not (output_dir / merged_fname).exists()) and preform_processing:
+        print("Merging sequence lines from read 1 and read 2 in one step")
+        command = f'paste <(zcat {fastq_r1} | awk \'NR%4==2\') <(zcat {fastq_r2} | awk \'NR%4==2\')'
+        if with_gzip:
+            command += ' | gzip > merged.fastq.gz'
+        else:
+            command += ' > merged.fastq'
+        print(command)
+        # command = f'paste <(zcat {fastq_r1} | awk \'NR%4==2\') <(zcat {fastq_r2} | awk \'NR%4==2\') | gzip > merged.fastq.gz'
+        subprocess.run(command, cwd=output_dir, shell=True, executable='/bin/bash')
+    else:
+        print("Merged file already exists. Skipping")
+
+
+    filt_fname = "merged_preFilt_postFilt.fastq.gz"
+    if not with_gzip:
+        filt_fname = "merged_preFilt_postFilt.fastq"
+
+    if (not (output_dir / filt_fname).exists()) &  preform_processing:
         print("Fuzzy grep-ing for polyA constant sequence")
         print(constant_sequence_pretag)
-        command = [f'zcat merged.fastq.gz | {ug_exec_path} -Z3 {constant_sequence_pretag} |  {ug_exec_path} -Z3 {constant_sequence_posttag} | gzip > merged_preFilt_postFilt.fastq.gz']
+        command = f'cat {merged_fname} | {ug_exec_path} -Z3 {constant_sequence_pretag} |  {ug_exec_path} -Z3 {constant_sequence_posttag}'
+        if with_gzip:
+            command = 'z' + command
+            command += f' | gzip > {filt_fname}'
+        else:
+            command += f' > {filt_fname}'
+        print(command)
         result = subprocess.run(command, cwd=output_dir, shell=True, capture_output=True, text=True)
 
     bc_size = len(tag_sequence)
@@ -256,19 +270,30 @@ def main(
     bc_end = bc_start+bc_size-1
   
     print("Cutting out the identifiers/UMIs")
-    print("Cutting out the identifiers/UMIs")
 
     if preform_processing:
-        command = [f'zcat merged_preFilt_postFilt.fastq.gz | cut -c 1-10 | gzip > umi_preFilt_postFilt.fastq.gz; zcat merged_preFilt_postFilt.fastq.gz | cut -c {bc_start}-{bc_end} | gzip > ident_preFilt_postFilt.fastq.gz']
+        if with_gzip:
+            command = [f'zcat {filt_fname} | cut -c {umi_start_pos_r1}-{umi_end_pos_r1} | gzip > umi_preFilt_postFilt.fastq.gz; zcat {filt_fname} | cut -c {bc_start}-{bc_end} | gzip > ident_preFilt_postFilt.fastq.gz']
+        else:
+            command = [f'cat {filt_fname} | cut -c {umi_start_pos_r1}-{umi_end_pos_r1} > umi_preFilt_postFilt.fastq; cat {filt_fname} | cut -c {bc_start}-{bc_end} > ident_preFilt_postFilt.fastq']
+        print(command)
         result = subprocess.run(command, cwd=output_dir, shell=True, capture_output=True, text=True)
 
     print(f"Reading identifiers/UMIs")
-    cellID_path = output_dir / 'ident_preFilt_postFilt.fastq.gz'
-    umi_path = output_dir / 'umi_preFilt_postFilt.fastq.gz'
-    with gzip.open(cellID_path, "rt") as fh:
-        cell_ID = [line.strip() for line in itertools.islice(fh, 0, None, 1)]
-    with gzip.open(umi_path, "rt") as fh:
-        umis = [line.strip() for line in itertools.islice(fh, 0, None, 1)]
+    if with_gzip:
+        cellID_path = output_dir / 'ident_preFilt_postFilt.fastq.gz'
+        umi_path = output_dir / 'umi_preFilt_postFilt.fastq.gz'
+        with gzip.open(cellID_path, "rt") as fh:
+            cell_ID = [line.strip() for line in itertools.islice(fh, 0, None, 1)]
+        with gzip.open(umi_path, "rt") as fh:
+            umis = [line.strip() for line in itertools.islice(fh, 0, None, 1)]
+    else:
+        cellID_path = output_dir / 'ident_preFilt_postFilt.fastq'
+        umi_path = output_dir / 'umi_preFilt_postFilt.fastq'
+        with open(cellID_path, "r") as fh:
+            cell_ID = [line.strip() for line in itertools.islice(fh, 0, None, 1)]
+        with open(umi_path, "r") as fh:
+            umis = [line.strip() for line in itertools.islice(fh, 0, None, 1)]
 
     assert len(cell_ID) == len(umis), "read different number of reads"
     num_reads_post_const_grep = len(cell_ID)
